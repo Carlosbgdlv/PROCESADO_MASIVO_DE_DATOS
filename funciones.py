@@ -19,8 +19,10 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 ##Función nº 1
 def preprocesado_pais(covid_vaccine_data,pais):
     """
-    covid_vaccine_data: dataframe con todas las vacunas
-    pais: pais que queremos escoger para analizar
+    - covid_vaccine_data: dataframe con todas las vacunas
+    - pais: pais que queremos escoger para analizar
+    
+    return: dataframe preprocesado.
     """
     vacc_pais = covid_vaccine_data.loc[covid_vaccine_data.country == pais]
     #print(pais)
@@ -51,11 +53,87 @@ def preprocesado_pais(covid_vaccine_data,pais):
     return vacc_pais
 
 
+#Función 2, reorganización de los datos
+def organize_data(to_forecast, window, horizon=1):
+    
+    shape = to_forecast.shape[:-1] + (to_forecast.shape[-1] - window + 1, window)
+    strides = to_forecast.strides + (to_forecast.strides[-1],)
+    X = np.lib.stride_tricks.as_strided(to_forecast,
+                                        shape=shape,
+                                        strides=strides)
+    y = np.array([X[i+horizon][-1] for i in range(len(X)-horizon)])
+    return X[:-horizon], y
+
+
+
+
+def lr_series(time_series_people,time_series_total,lag,variable1,variable2):
+    """
+    input: dos series:
+    - time_series_people, variable 1
+    - time_series_total, variable 2
+    - lag, el desfase, int
+    - variable1, nombre de la variable a predecir ,str
+    - variable2, nombre de la variable a predecir, str
+    
+    return: lista de listas con las prestaciones de los dos modelos de regresión: [[MAE_1,MAE2_1],[MAE_2,MAE2_2]]
+    
+    """
+    
+    lag = lag
+    X_1, y_1 = organize_data(np.array(time_series_people), lag)
+    X_2, y_2 = organize_data(np.array(time_series_total), lag)
+    
+    #variable1
+    lr = LinearRegression()
+    lr_fit_people = lr.fit(X_1, y_1)
+    lr_prediction_people = lr_fit_people.predict(X_1)
+    #variable2
+    lr_fit_total = lr.fit(X_2, y_2)
+    lr_prediction_total = lr_fit_total.predict(X_2)
+    
+    plt.figure(figsize=(17, 4))
+    plt.subplot(121)
+    plt.plot(time_series_people.values, '-o', color='teal')
+    plt.plot(np.arange(lag, len(time_series_people)), lr_prediction_people, '-o', label='prediction', color='orange')
+    plt.title('Linear regression:', variable1)
+    plt.legend(fontsize=12);
+
+    MAE_var1 = mean_absolute_error(time_series_people[lag:], lr_prediction_people)
+    MAE2_var1 = mean_absolute_error(time_series_people[-90:], lr_prediction_people[-90:])
+
+    print(variable1,': ')
+    print('MAE = {0:.3f}'.format(MAE_var1))
+    print('MAE2 = {0:.3f}'.format(MAE2_var1)) #for the last 90 days only
+
+    print(' \n ')
+    plt.subplot(122)
+    plt.plot(time_series_total.values, '-o', color='teal')
+    plt.plot(np.arange(lag, len(time_series_total)), lr_prediction_total, '-o', label='prediction', color='orange')
+    plt.title('Linear regression model: total_vaccinations')
+    plt.legend(fontsize=12);
+    
+    MAE_var2 = mean_absolute_error(time_series_total[lag:], lr_prediction_total)
+    MAE2_var2 = mean_absolute_error(time_series_total[-90:], lr_prediction_total[-90:])
+
+    print(variable2, ': ')
+    print('MAE = {0:.3f}'.format(mean_absolute_error(time_series_total[lag:], lr_prediction_total)))
+    print('MAE2 = {0:.3f}'.format(mean_absolute_error(time_series_total[-90:], lr_prediction_total[-90:]))) #for the last 90 days only
+    
+    return [[MAE_var1, MAE2_var1],[MAE_var2,MAE2_var2]]
+
+
 
 #--------procedimiento de plot -- ----- -- - - - - -  --  - - - - - -
 
 ##Procedimiento nº1
 def plot_variables(data, variable1, variable2):
+    """
+    - data = dataframe del país de interés, DataFrame, pandas
+    - variable1 = variable que se quiere visualizar, str
+    - variable2 = variable que se quiere visualizar, str
+    
+    """
     sns.set_style("darkgrid")
     plt.figure(figsize=(16, 3))
     plt.subplot(121)
@@ -77,6 +155,12 @@ def plot_variables(data, variable1, variable2):
     
 #Procedimiento nº2     #media semanal y mensual
 def weekly_monthly_avg(vacc_pais,variable1,variable2):
+    """
+    - data = dataframe del país de interés, DataFrame, pandas
+    - variable1 = variable que se quiere visualizar, str
+    - variable2 = variable que se quiere visualizar, str
+    
+    """
     vacc_weekly_avg = vacc_pais.resample('W').apply(np.mean)
     vacc_monthly_avg = vacc_pais.resample('M').apply(np.mean)
     
@@ -100,6 +184,13 @@ def weekly_monthly_avg(vacc_pais,variable1,variable2):
     
 #Procedimento nº3
 def rolling_mean(vacc_pais,variable1,variable2):
+    """
+    - info: cálculo y visualización de media móvil
+    
+    data = dataframe del país de interés, DataFrame, pandas
+    variable1 = variable que se quiere visualizar, str
+    variable2 = variable que se quiere visualizar, str
+    """
     rolling_mean_1 = vacc_pais[variable1].rolling(window=7, center=False).mean() #window of 7 (weekly avg) captures our data better 
     rolling_mean_2 = vacc_pais[variable2].rolling(window=7, center=False).mean() #window of 7 (weekly avg) captures our data better
     
@@ -146,7 +237,7 @@ def autocorrelation(vacc_pais,variable1,variable2):
     
     
     
-    
+  
     
     
     
