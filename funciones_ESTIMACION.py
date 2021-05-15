@@ -349,14 +349,14 @@ def time_series_model(vacc_pais,time_series_people,time_series_total,optlag_peop
     if model == 'ARIMA':
         
         #ARIMA: people fully vaccinated 
-        model_people = ARIMA(time_series_people, order=(2,1,1))
+        model_people = ARIMA(time_series_people, order=(1,1,1))
         arima_fit_people = model_people.fit()
         arima_forecast_people= arima_fit_people.forecast(steps=days)[0]
         print('ARIMA: total vaccinations')
         print(arima_forecast_people)
 
         #ARIMA: totalvaccinations
-        model_total = ARIMA(time_series_total, order=(2,1,1))
+        model_total = ARIMA(time_series_total, order=(1,1,1))
         arima_fit_total = model_total.fit()
         arima_forecast_total= arima_fit_total.forecast(steps=days)[0]
         print('ARIMA, total vaccinations:')
@@ -411,6 +411,7 @@ def time_series_model(vacc_pais,time_series_people,time_series_total,optlag_peop
         plt.xlim('2021-02-25','2021-05-25')
         
     if model == 'VAR':
+       
         return ar_forecast_people
         
       
@@ -526,9 +527,14 @@ def forecast_accuracy(forecast, actual):
 #VAR
 
 def VAR_model_pais(vacc_Spain,variables,
-                  time_series_people, time_series_total,optlag_people,optlag_total,model='AR',days=7):
+                  time_series_people, time_series_total,optlag_people,optlag_total,pais,model='VAR',days=7):
     
     var_Spain = vacc_Spain[variables]
+    
+    # Splitting the dataset into training and test data.
+    nobs = 7
+    df_train, df_test = var_Spain[0:-nobs], var_Spain[-nobs:]
+    
     
     # First Differencing
     var_Spain_differenced = var_Spain.diff().dropna()
@@ -536,34 +542,83 @@ def VAR_model_pais(vacc_Spain,variables,
     var_Spain_differenced = var_Spain_differenced.diff().dropna()
     
     ar_forecast_people = time_series_model(var_Spain,time_series_people,
-                                         time_series_total,optlag_people,optlag_total,model='AR',days=7)
+                                         time_series_total,optlag_people,optlag_total,model,days=7)
     
     idx_20 = ar_forecast_people.index.values
 
     forecast_input = var_Spain.values
+    
+    #MODELO
+    model = VAR(var_Spain_differenced)
+    maxlags=12
+    x = model.select_order(maxlags) ## hacer una variable de entrada el maxlags
+    model_fitted = model.fit(maxlags)
+    lag_order = model_fitted.k_ar
+    forecast_input = var_Spain_differenced.values[-lag_order:]
 
     fc = model_fitted.forecast(y=forecast_input, steps=7)
     df_forecast = pd.DataFrame(fc, index=idx_20, columns=var_Spain.columns + '_2d')
     
     df_results = invert_transformation(var_Spain, df_forecast, second_diff=True) 
     
-    df_results.loc[:, ['total_vaccinations_forecast', 'people_vaccinated_forecast',
+    df_inverted = df_results.loc[:, ['total_vaccinations_forecast', 'people_vaccinated_forecast',
                    'people_fully_vaccinated_forecast', 'daily_vaccinations_forecast']]
     
     
-    print(df_results)
     
     fig, axes = plt.subplots(nrows=int(len(var_Spain.columns)/2), ncols=2, dpi=150, figsize=(7,7))
     for i, (col,ax) in enumerate(zip(var_Spain.columns, axes.flatten())):
         df_results[col+'_forecast'].plot(legend=True, ax=ax).autoscale(axis='x',tight=True)
         df_test[col][-nobs:].plot(legend=True, ax=ax);
-        ax.set_title(col + ": Forecast vs Actuals")
+        ax.set_title(col + ' ' + pais +":Forecast vs Actuals")
         ax.xaxis.set_ticks_position('none')
         ax.yaxis.set_ticks_position('none')
         ax.spines["top"].set_alpha(0)
         ax.tick_params(labelsize=6)
 
     plt.tight_layout();
+    
+
+    
+###
+
+#Función de varios países
+
+def VAR_paises(covid_vaccine_data,paises):
+    """
+    covid_vaccine_data: DataFrame con los datos de todos los países
+    paises: lista de países de los que queremos saber su pronóstico, lst
+    """
+    for i in paises:
+    
+        vacc_pais = f.preprocesado_pais(covid_vaccine_data,i)
+        people_fully_vaccinated = vacc_pais.people_fully_vaccinated
+        people_fully_vaccinated_diff =people_fully_vaccinated.diff(2)
+
+        total_vaccinations = vacc_pais.total_vaccinations
+        total_vaccinations_diff =total_vaccinations.diff(2)
+
+        time_series_people = people_fully_vaccinated_diff
+        time_series_total = total_vaccinations_diff
+
+        #time_series, imputamos los NaN, porque quedan los del lag del principio
+        time_series_people = time_series_people.fillna(time_series_people.median())
+        time_series_total = time_series_total.fillna(time_series_total.median())
+
+        #planteamos el modelo AR: people
+        ar_people = tsa.AR(time_series_people)
+        #calculamos cual es el lag o el desfase adecuado 
+        optlag_people = ar_people.select_order(20, ic='aic') 
+        #planteamos el modelo AR: total, 
+        #porque vamos a utilizar el index, es decir las fechas, para el modelo VAR
+        ar_total = tsa.AR(time_series_total)
+        #calculamos cual es el lag o el desfase adecuado 
+        optlag_total = ar_total.select_order(20, ic='aic') 
+
+
+        #print(i)
+        f.VAR_model_pais(vacc_pais,variables,time_series_people,
+                   time_series_total,optlag_people,optlag_total,pais=i,model='VAR',days=7)
 
 
 
@@ -612,7 +667,24 @@ def augment_df(df, *fns, register=None):
 
 #####----------------------
 
+#curvas de ajuste
 
+from scipy.optimize import curve_fit
+
+def lineal(x, a, b):
+    return a*x +b 
+
+def powerlaw(x, a, b, c):
+    return c*x**a + b
+
+def quadratic(x, a, b, c):
+    return a*x**2 + b*x + c
+
+def exp(x, a, b, c):
+    return a**(x-c)+b
+
+def logistic(x, a, b, c, d):
+    return a/(1+np.exp(b*(x-c))) + d
 
 
 
