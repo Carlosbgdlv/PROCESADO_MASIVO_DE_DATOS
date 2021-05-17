@@ -51,16 +51,16 @@ def preprocesado_pais(covid_vaccine_data,pais):
     
     
     #crear una funcion de preprocesado
-    vacc_pais['daily_vaccinations']= vacc_pais['daily_vaccinations'].interpolate(method='cubicspline')
-    vacc_pais['total_vaccinations']= vacc_pais['total_vaccinations'].interpolate(method='cubicspline')
-    vacc_pais['people_vaccinated']= vacc_pais['people_vaccinated'].interpolate(method='cubicspline')
+    vacc_pais['daily_vaccinations']= vacc_pais['daily_vaccinations'].interpolate(method='cubic')
+    vacc_pais['total_vaccinations']= vacc_pais['total_vaccinations'].interpolate(method='cubic')
+    vacc_pais['people_vaccinated']= vacc_pais['people_vaccinated'].interpolate(method='cubic')
 
-    vacc_pais['people_fully_vaccinated']= vacc_pais['people_fully_vaccinated'].interpolate(method='cubicspline')
-    vacc_pais['total_vaccinations_per_hundred']= vacc_pais['total_vaccinations_per_hundred'].interpolate(method='cubicspline')
-    vacc_pais['people_vaccinated_per_hundred']= vacc_pais['people_vaccinated_per_hundred'].interpolate(method='cubicspline')
+    vacc_pais['people_fully_vaccinated']= vacc_pais['people_fully_vaccinated'].interpolate(method='cubic')
+    vacc_pais['total_vaccinations_per_hundred']= vacc_pais['total_vaccinations_per_hundred'].interpolate(method='cubic')
+    vacc_pais['people_vaccinated_per_hundred']= vacc_pais['people_vaccinated_per_hundred'].interpolate(method='cubic')
 
-    vacc_pais['people_fully_vaccinated_per_hundred']=vacc_pais['people_fully_vaccinated_per_hundred'].interpolate(method='cubicspline')
-    vacc_pais['daily_vaccinations_per_million']= vacc_pais['daily_vaccinations_per_million'].interpolate(method='cubicspline')
+    vacc_pais['people_fully_vaccinated_per_hundred']=vacc_pais['people_fully_vaccinated_per_hundred'].interpolate(method='cubic')
+    vacc_pais['daily_vaccinations_per_million']= vacc_pais['daily_vaccinations_per_million'].interpolate(method='cubic')
 
     vacc_pais = vacc_pais.fillna(vacc_pais.median())
     
@@ -220,12 +220,14 @@ def rolling_mean(vacc_pais,variable1,variable2):
     plt.plot(vacc_pais[variable1], color='teal', label = variable1)
     plt.plot(rolling_mean_1, 'red',label = 'media móvil')
     plt.title(variable1)
+    plt.xticks(rotation=75)
     plt.legend()
 
     plt.subplot(122)
     plt.plot(vacc_pais[variable2], color='teal', label = variable2)
     plt.plot(rolling_mean_2, 'red',label = 'media móvil')
     plt.title(variable2)
+    plt.xticks(rotation=75)
     plt.legend()
 
     
@@ -351,16 +353,32 @@ def time_series_model(vacc_pais,time_series_people,time_series_total,optlag_peop
         #ARIMA: people fully vaccinated 
         model_people = ARIMA(time_series_people, order=(1,1,1))
         arima_fit_people = model_people.fit()
+        arima_fit_people_predict = arima_fit_people.predict(start=days)
         arima_forecast_people= arima_fit_people.forecast(steps=days)[0]
+        
+        print('prestaciones: people_fully_vaccinated: ')
+        print('MAE = {0:.3f}'.format(mean_absolute_error(time_series_people[days:], arima_fit_people_predict)))
+        print('MAE2 = {0:.3f}'.format(mean_absolute_error(time_series_people[-90:], arima_fit_people_predict[-90:]))) #error only 
+
+        print('\n')
+        
         print('ARIMA: total vaccinations')
         print(arima_forecast_people)
 
         #ARIMA: totalvaccinations
         model_total = ARIMA(time_series_total, order=(1,1,1))
         arima_fit_total = model_total.fit()
+        arima_fit_total_predict = arima_fit_total.predict(start=days)
         arima_forecast_total= arima_fit_total.forecast(steps=days)[0]
         print('ARIMA, total vaccinations:')
         print(arima_forecast_total)
+        print('\n')
+        print('prestaciones: total_vaccinations: ')
+        print('MAE = {0:.3f}'.format(mean_absolute_error(time_series_total[days:], arima_fit_total_predict)))
+        print('MAE2 = {0:.3f}'.format(mean_absolute_error(time_series_total[-90:], arima_fit_total_predict[-90:]))) #error only 
+
+        
+      
         
         #people
         idx_people = ar_forecast_people.index.values
